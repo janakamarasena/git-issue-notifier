@@ -68,16 +68,12 @@ public class NotificationService {
     private String getValue(String key, JsonObject data) {
 
         try {
-
             String[] keys = key.split("\\.");
-
             JsonObject elm = data;
             for (int i = 0; i < keys.length - 1; i++) {
                 elm = elm.get(keys[i]).getAsJsonObject();
             }
-
             return elm.get(keys[keys.length - 1]).getAsString();
-
         } catch (Exception e) {
             return "";
         }
