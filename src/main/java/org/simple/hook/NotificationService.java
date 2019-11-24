@@ -123,9 +123,6 @@ public class NotificationService {
             request.setEndpoint("mail/send");
             request.setBody(mail.build());
             com.sendgrid.Response response = sg.api(request);
-            System.out.println(response.getStatusCode());
-            System.out.println(response.getBody());
-            System.out.println(response.getHeaders());
         } catch (IOException e) {
             // Too lazy to properly handle exception.
             e.printStackTrace();
