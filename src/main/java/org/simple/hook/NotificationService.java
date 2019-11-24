@@ -98,7 +98,7 @@ public class NotificationService {
 
     private void sendEmail(JsonObject data, String sender, String to) {
 
-        Email from = new Email(sender);
+        Email from = new Email(sender, "git-issue-hook");
         Personalization personalization = new Personalization();
         String[] tos = to.replaceAll(" ", "").split(",");
 
