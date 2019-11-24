@@ -55,16 +55,14 @@ public class NotificationService {
     @POST
     @Path("/notify")
     @Consumes("application/json")
-    public void post(JsonObject data, @QueryParam("githubToken") String githubToken,
-                     @QueryParam("sendgridToken") String sendgridToken, @QueryParam("sender") String sender,
-                     @QueryParam("to") String to) {
+    public void post(JsonObject data, @QueryParam("sender") String sender, @QueryParam("to") String to) {
 
         if (!"opened".equals(getValue(ACTION_KEY, data))
-                || isMember(getValue(ISSUE_REPORTER_KEY, data), githubToken)) {
+                || isMember(getValue(ISSUE_REPORTER_KEY, data))) {
             return;
         }
 
-        sendEmail(data, sendgridToken, sender, to);
+        sendEmail(data, sender, to);
     }
 
     private String getValue(String key, JsonObject data) {
@@ -85,12 +83,12 @@ public class NotificationService {
         }
     }
 
-    private boolean isMember(String user, String token) {
+    private boolean isMember(String user) {
 
-        // Token = base64encoded(<github_username>:<github_personal_token>)
+        // GITHUB_TOKEN = base64encoded(<github_username>:<github_personal_token>)
         Request request = new Request.Builder()
                 .url("https://api.github.com/orgs/wso2/members/" + user)
-                .addHeader("Authorization", "Basic " + token)
+                .addHeader("Authorization", "Basic " + System.getenv("GITHUB_TOKEN"))
                 .build();
 
         try (Response response = httpClient.newCall(request).execute()) {
@@ -102,7 +100,7 @@ public class NotificationService {
         }
     }
 
-    private void sendEmail(JsonObject data, String sendgridToken, String sender, String to) {
+    private void sendEmail(JsonObject data, String sender, String to) {
 
         Email from = new Email(sender);
         Personalization personalization = new Personalization();
@@ -118,7 +116,7 @@ public class NotificationService {
         mail.setSubject(getSubject(data));
         mail.addContent(new Content("text/html", getContent(data)));
 
-        SendGrid sg = new SendGrid(sendgridToken);
+        SendGrid sg = new SendGrid(System.getenv("SENDGRID_TOKEN"));
         com.sendgrid.Request request = new com.sendgrid.Request();
         try {
             request.setMethod(Method.POST);
