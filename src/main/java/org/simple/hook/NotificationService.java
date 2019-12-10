@@ -90,7 +90,6 @@ public class NotificationService {
 
     private boolean isMember(String user) {
 
-        // GITHUB_TOKEN = base64encoded(<github_username>:<github_personal_token>)
         Request request = new Request.Builder()
                 .url("https://api.github.com/orgs/wso2/members/" + user)
                 .addHeader("Authorization", "Basic " + System.getenv("GIT_ISSUE_HOOK_GITHUB_TOKEN"))
