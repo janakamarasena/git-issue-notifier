@@ -37,11 +37,12 @@
             <version>4.2.2</version>
         </dependency>
         <dependency>
-            <groupId>com.sendgrid</groupId>
-            <artifactId>sendgrid-java</artifactId>
-            <version>4.4.1</version>
+            <groupId>org.simplejavamail</groupId>
+            <artifactId>simple-java-mail</artifactId>
+            <version>5.5.1</version>
         </dependency>
     </dependencies>
+
 
     <properties>
         <microservice.mainClass>org.simple.hook.Application</microservice.mainClass>

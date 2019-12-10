@@ -20,10 +20,25 @@ import org.wso2.msf4j.MicroservicesRunner;
  * Application entry point.
  */
 public class Application {
+
     public static void main(String[] args) {
 
-        new MicroservicesRunner(Integer.valueOf(System.getenv("PORT")))
+        int port = -1;
+        try {
+            port = Integer.valueOf(System.getenv("GIT_ISSUE_HOOK_PORT"));
+        } catch (Exception ignored) {
+        }
+
+        MicroservicesRunner microservicesRunner;
+        if (port != -1) {
+            microservicesRunner = new MicroservicesRunner(port);
+        } else {
+            microservicesRunner = new MicroservicesRunner();
+        }
+
+        microservicesRunner
                 .deploy(new NotificationService())
+                .deploy(new StatusService())
                 .start();
     }
 }

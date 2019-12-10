@@ -15,15 +15,13 @@
 package org.simple.hook;
 
 import com.google.gson.JsonObject;
-import com.sendgrid.Method;
-import com.sendgrid.SendGrid;
-import com.sendgrid.helpers.mail.Mail;
-import com.sendgrid.helpers.mail.objects.Content;
-import com.sendgrid.helpers.mail.objects.Email;
-import com.sendgrid.helpers.mail.objects.Personalization;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
+import org.simplejavamail.email.Email;
+import org.simplejavamail.email.EmailBuilder;
+import org.simplejavamail.mailer.Mailer;
+import org.simplejavamail.mailer.MailerBuilder;
 
 import javax.ws.rs.Consumes;
 import javax.ws.rs.POST;
@@ -37,12 +35,15 @@ import java.io.IOException;
 @Path("/listener")
 public class NotificationService {
 
-    private final OkHttpClient httpClient;
     private final String ISSUE_REPORTER_KEY = "issue.user.login";
     private final String ISSUE_NUMBER_KEY = "issue.number";
+    private final String REPO_NAME_KEY = "repository.name";
+    private final String REPO_FULL_NAME_KEY = "repository.full_name";
     private final String ISSUE_URL_KEY = "issue.html_url";
     private final String ISSUE_TITLE_KEY = "issue.title";
     private final String ACTION_KEY = "action";
+    private OkHttpClient httpClient;
+    private Mailer mailer;
 
     public NotificationService() {
 
@@ -50,19 +51,27 @@ public class NotificationService {
                 .followRedirects(false)
                 .followSslRedirects(false)
                 .build();
+
+        mailer = MailerBuilder
+                .withSMTPServer(
+                        System.getenv("GIT_ISSUE_HOOK_EMAIL_HOST"),
+                        Integer.valueOf(System.getenv("GIT_ISSUE_HOOK_EMAIL_PORT")),
+                        System.getenv("GIT_ISSUE_HOOK_EMAIL_USERNAME"),
+                        System.getenv("GIT_ISSUE_HOOK_EMAIL_PASSWORD"))
+                .buildMailer();
     }
 
     @POST
     @Path("/notify")
     @Consumes("application/json")
-    public void post(JsonObject data, @QueryParam("sender") String sender, @QueryParam("to") String to) {
+    public void post(JsonObject data, @QueryParam("to") String to) {
 
         if (!"opened".equals(getValue(ACTION_KEY, data))
                 || isMember(getValue(ISSUE_REPORTER_KEY, data))) {
             return;
         }
 
-        sendEmail(data, sender, to);
+        sendEmail(data, to);
     }
 
     private String getValue(String key, JsonObject data) {
@@ -84,7 +93,7 @@ public class NotificationService {
         // GITHUB_TOKEN = base64encoded(<github_username>:<github_personal_token>)
         Request request = new Request.Builder()
                 .url("https://api.github.com/orgs/wso2/members/" + user)
-                .addHeader("Authorization", "Basic " + System.getenv("GITHUB_TOKEN"))
+                .addHeader("Authorization", "Basic " + System.getenv("GIT_ISSUE_HOOK_GITHUB_TOKEN"))
                 .build();
 
         try (Response response = httpClient.newCall(request).execute()) {
@@ -96,33 +105,16 @@ public class NotificationService {
         }
     }
 
-    private void sendEmail(JsonObject data, String sender, String to) {
+    private void sendEmail(JsonObject data, String to) {
 
-        Email from = new Email(sender, "git-issue-hook");
-        Personalization personalization = new Personalization();
-        String[] tos = to.replaceAll(" ", "").split(",");
+        Email email = EmailBuilder.startingBlank()
+                .from("git-issue-hook", "gitissuehook@wso2.com")
+                .toMultiple(to)
+                .withSubject(getSubject(data))
+                .withHTMLText(getContent(data))
+                .buildEmail();
 
-        for (String rec : tos) {
-            personalization.addTo(new Email(rec));
-        }
-
-        Mail mail = new Mail();
-        mail.addPersonalization(personalization);
-        mail.setFrom(from);
-        mail.setSubject(getSubject(data));
-        mail.addContent(new Content("text/html", getContent(data)));
-
-        SendGrid sg = new SendGrid(System.getenv("SENDGRID_TOKEN"));
-        com.sendgrid.Request request = new com.sendgrid.Request();
-        try {
-            request.setMethod(Method.POST);
-            request.setEndpoint("mail/send");
-            request.setBody(mail.build());
-            com.sendgrid.Response response = sg.api(request);
-        } catch (IOException e) {
-            // Too lazy to properly handle exception.
-            e.printStackTrace();
-        }
+        mailer.sendMail(email);
     }
 
     private String getContent(JsonObject data) {
@@ -130,11 +122,13 @@ public class NotificationService {
         return String.format(
                 "<html>" +
                 "<body>" +
+                "  <div><code>Repo: %s</code></div>" +
                 "  <div><code>Issue: %s</code></div>" +
                 "  <div><code>Reporter: %s</code></div>" +
                 "  <div><code>Link: %s</code></div>" +
                 "</body>" +
                 "</html>",
+                getValue(REPO_FULL_NAME_KEY, data),
                 getValue(ISSUE_TITLE_KEY, data),
                 getValue(ISSUE_REPORTER_KEY, data),
                 getValue(ISSUE_URL_KEY, data));
@@ -142,6 +136,7 @@ public class NotificationService {
 
     private String getSubject(JsonObject data) {
 
-        return String.format("[Git-Issue] New git issue #%s from non member", getValue(ISSUE_NUMBER_KEY, data));
+        return String.format("[Git-Issue] New git issue %s#%s from non member", getValue(REPO_NAME_KEY, data),
+                getValue(ISSUE_NUMBER_KEY, data));
     }
 }
