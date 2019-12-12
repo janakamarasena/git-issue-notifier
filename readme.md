@@ -26,7 +26,7 @@ Having just the `read:org` scope is sufficient for the github_personal_token[1]
 
 ### Sample calls
 ```
-You can add a git hook for issues in the following way
+You can add a git hook for issues(only support issues) in the following way
 [POST] /listener/notify?to=joe@sample.com,jane@sample.com
 
 Endpoint to just check the server availability
