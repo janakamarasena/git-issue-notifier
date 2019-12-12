@@ -1,4 +1,4 @@
-A simple git hook listener to listen for git issues and notify to emails if the issue is from a non member.
+A simple git hook listener to listen for git issues and notify to emails if the issue is from a non member. Right now the webhook listener only supports the JSON payload from the webhook when only issues are selected in the webhook configuration.
 
 ### Build 
 ```
