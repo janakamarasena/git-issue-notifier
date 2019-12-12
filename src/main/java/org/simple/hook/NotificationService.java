@@ -18,6 +18,7 @@ import com.google.gson.JsonObject;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
+import org.apache.commons.lang3.StringUtils;
 import org.simplejavamail.email.Email;
 import org.simplejavamail.email.EmailBuilder;
 import org.simplejavamail.mailer.Mailer;
@@ -42,10 +43,13 @@ public class NotificationService {
     private final String ISSUE_URL_KEY = "issue.html_url";
     private final String ISSUE_TITLE_KEY = "issue.title";
     private final String ACTION_KEY = "action";
+    private String githubToken;
     private OkHttpClient httpClient;
     private Mailer mailer;
 
     public NotificationService() {
+
+        githubToken = System.getenv("GIT_ISSUE_HOOK_GITHUB_TOKEN");
 
         httpClient = new OkHttpClient().newBuilder()
                 .followRedirects(false)
@@ -65,6 +69,10 @@ public class NotificationService {
     @Path("/notify")
     @Consumes("application/json")
     public void post(JsonObject data, @QueryParam("to") String to) {
+
+        if (StringUtils.isBlank(to)) {
+            return;
+        }
 
         if (!"opened".equals(getValue(ACTION_KEY, data))
                 || isMember(getValue(ISSUE_REPORTER_KEY, data))) {
@@ -92,7 +100,7 @@ public class NotificationService {
 
         Request request = new Request.Builder()
                 .url("https://api.github.com/orgs/wso2/members/" + user)
-                .addHeader("Authorization", "Basic " + System.getenv("GIT_ISSUE_HOOK_GITHUB_TOKEN"))
+                .addHeader("Authorization", "Basic " + githubToken)
                 .build();
 
         try (Response response = httpClient.newCall(request).execute()) {
