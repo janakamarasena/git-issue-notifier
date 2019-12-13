@@ -17,7 +17,6 @@ package org.simple.hook;
 import com.google.gson.JsonObject;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
-import okhttp3.Response;
 import org.apache.commons.lang3.StringUtils;
 import org.simplejavamail.email.Email;
 import org.simplejavamail.email.EmailBuilder;
@@ -25,10 +24,25 @@ import org.simplejavamail.mailer.Mailer;
 import org.simplejavamail.mailer.MailerBuilder;
 
 import javax.ws.rs.Consumes;
+import javax.ws.rs.DELETE;
+import javax.ws.rs.FormParam;
+import javax.ws.rs.GET;
 import javax.ws.rs.POST;
 import javax.ws.rs.Path;
+import javax.ws.rs.Produces;
 import javax.ws.rs.QueryParam;
+import javax.ws.rs.core.MediaType;
+import javax.ws.rs.core.Response;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Properties;
 
 /**
  * Git hook listener class.
@@ -43,13 +57,16 @@ public class NotificationService {
     private final String ISSUE_URL_KEY = "issue.html_url";
     private final String ISSUE_TITLE_KEY = "issue.title";
     private final String ACTION_KEY = "action";
-    private String githubToken;
+    private final String GITHUB_TOKEN;
+    private final String CONFIG_FILE_PATH;
+    private final String EXCLUDE_LIST_KEY= "excludeList";
+    private volatile List<String> excludeList;
     private OkHttpClient httpClient;
     private Mailer mailer;
 
     public NotificationService() {
 
-        githubToken = System.getenv("GIT_ISSUE_HOOK_GITHUB_TOKEN");
+        GITHUB_TOKEN = System.getenv("GIT_ISSUE_HOOK_GITHUB_TOKEN");
 
         httpClient = new OkHttpClient().newBuilder()
                 .followRedirects(false)
@@ -63,23 +80,68 @@ public class NotificationService {
                         System.getenv("GIT_ISSUE_HOOK_EMAIL_USERNAME"),
                         System.getenv("GIT_ISSUE_HOOK_EMAIL_PASSWORD"))
                 .buildMailer();
+
+        CONFIG_FILE_PATH =
+                new File(getClass().getProtectionDomain().getCodeSource().getLocation().getPath()).getParent() +
+                        "/config.properties";
+
+        loadExcludeList();
     }
 
     @POST
     @Path("/notify")
-    @Consumes("application/json")
+    @Consumes(MediaType.APPLICATION_JSON)
     public void post(JsonObject data, @QueryParam("to") String to) {
 
         if (StringUtils.isBlank(to)) {
             return;
         }
 
-        if (!"opened".equals(getValue(ACTION_KEY, data))
-                || isMember(getValue(ISSUE_REPORTER_KEY, data))) {
+        if (!"opened".equals(getValue(ACTION_KEY, data))) {
+            return;
+        }
+
+        String issueReporter = getValue(ISSUE_REPORTER_KEY, data);
+        if (excludeList.contains(issueReporter) || isMember(issueReporter)) {
             return;
         }
 
         sendEmail(data, to);
+    }
+
+    @POST
+    @Path("/excludes")
+    @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response addToExcludeList(@FormParam("exclude") String values) {
+
+        List<String> tempExcludeList = new ArrayList<>(Arrays.asList(values.replaceAll(" ", "").split(",")));
+        for (String exclude : tempExcludeList) {
+            if (!excludeList.contains(exclude)) {
+                excludeList.add(exclude);
+            }
+        }
+        saveExcludeList();
+
+        return Response.ok().entity(excludeList).build();
+    }
+
+    @GET
+    @Path("/excludes")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response getExcludeList() {
+
+        return Response.ok().entity(excludeList).build();
+    }
+
+    @DELETE
+    @Path("/excludes")
+    @Consumes(MediaType.APPLICATION_FORM_URLENCODED)
+    public void deleteFromExcludeList(@FormParam("exclude") String values) {
+
+        List<String> tempExcludeList = new ArrayList<>(Arrays.asList(values.replaceAll(" ", "").split(",")));
+        excludeList.removeAll(tempExcludeList);
+        saveExcludeList();
     }
 
     private String getValue(String key, JsonObject data) {
@@ -100,10 +162,25 @@ public class NotificationService {
 
         Request request = new Request.Builder()
                 .url("https://api.github.com/orgs/wso2/members/" + user)
-                .addHeader("Authorization", "Basic " + githubToken)
+                .addHeader("Authorization", "Basic " + GITHUB_TOKEN)
                 .build();
 
-        try (Response response = httpClient.newCall(request).execute()) {
+        try (okhttp3.Response response = httpClient.newCall(request).execute()) {
+            if (response.code() == 204) {
+                return true;
+            }
+        } catch (IOException e) {
+            // Too lazy to properly handle exception.
+            e.printStackTrace();
+            return true;
+        }
+
+        request = new Request.Builder()
+                .url("https://api.github.com/orgs/wso2-support/members/" + user)
+                .addHeader("Authorization", "Basic " + GITHUB_TOKEN)
+                .build();
+
+        try (okhttp3.Response response = httpClient.newCall(request).execute()) {
             return response.code() == 204;
         } catch (IOException e) {
             // Too lazy to properly handle exception.
@@ -145,5 +222,46 @@ public class NotificationService {
 
         return String.format("[Git-Issue] New git issue %s#%s from non member", getValue(REPO_NAME_KEY, data),
                 getValue(ISSUE_NUMBER_KEY, data));
+    }
+
+    private void loadExcludeList() {
+
+        File file = new File(CONFIG_FILE_PATH);
+
+        if (!file.exists()){
+            excludeList = new ArrayList<>();
+            return;
+        }
+
+        try (InputStream input = new FileInputStream(file)) {
+
+            Properties prop = new Properties();
+            prop.load(input);
+            String excludes = prop.getProperty(EXCLUDE_LIST_KEY);
+
+            if (StringUtils.isBlank(excludes)) {
+                excludeList = new ArrayList<>();
+                return;
+            }
+
+            excludeList = new ArrayList<>(Arrays.asList(excludes.split(",")));
+
+        } catch (IOException e) {
+            // Too lazy to properly handle exception.
+            excludeList = new ArrayList<>();
+            e.printStackTrace();
+        }
+    }
+
+    private void saveExcludeList() {
+
+        try (OutputStream output = new FileOutputStream(CONFIG_FILE_PATH)) {
+            Properties prop = new Properties();
+            prop.setProperty(EXCLUDE_LIST_KEY, StringUtils.join(excludeList, ","));
+            prop.store(output, null);
+        } catch (IOException e) {
+            // Too lazy to properly handle exception.
+            e.printStackTrace();
+        }
     }
 }
